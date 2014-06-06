@@ -1,0 +1,488 @@
+<!--
+  Copyright 2011-2014 Marvell Semiconductor, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<module xmlns="http://www.kinoma.com/kpr/1">
+
+    <variable id="EVENT" value="'event'" />
+    <variable id="EXCEPTION" value="'exception'" />
+    <variable id="TIMING" value="'timing'" />
+    <variable id="SCREENVIEW" value="'screenview'" />
+    <variable id="PAGEVIEW" value="'pageview'" />
+    <variable id="TRANSACTION" value="'transaction'" />
+    <variable id="ITEM" value="'item'" />
+    <variable id="SOCIAL" value="'social'" />
+
+    <!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- Tracker class - used to send measurment protocol data to -->
+    <!-- Google Analytics for tracking application usage.         --> 
+    <!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="Tracker">
+        <field id="clientId" />
+        <field id="useSalt" />
+        <field id="defaults" />
+        <constructor params="trackingId, clientId, userId, userAgent, anonymize, useSalt">
+            <![CDATA[
+                this.clientId = clientId || createUUID();          
+                this.useSalt = useSalt;
+            
+                this.addDefaults( new GeneralInfoParams( 1, trackingId, userAgent, anonymize ), new UserInfoParams( this.clientId, userId ) );
+            ]]>
+        </constructor>
+        <method id="send" params="type">
+            <![CDATA[
+                var params = new Object();
+                
+                params.t = type || EVENT;
+                
+                if( this.useSalt )
+                    params.z = Math.random();
+                
+                // add default parameters to request
+                if( this.defaults != null )
+                    mergeMeasurementProtocolParams( this.defaults, params );
+                
+                // add user specified parameters to request
+                for( var j = 1; j < arguments.length; j++ ) 
+                    mergeMeasurementProtocolParams( arguments[j], params );
+                
+                // invoke a handler that will send the analytics data to the google server
+                Message.notify( new Message( "/send/analytics?" + serializeQuery( params ) ) );
+            ]]>
+        </method>
+        <method id="addDefaults">
+            <![CDATA[
+                if( this.defaults == null )
+                    this.defaults = new Array();
+            
+                for( var j = 0; j < arguments.length; j++ ) 
+                {
+                    if( arguments[j] instanceof MeasurementProtocolParams )
+                        this.defaults.push( arguments[j] );
+                }                    
+            ]]>
+        </method>
+        <method id="getClientId">
+            <![CDATA[
+                return this.clientId;
+            ]]>
+        </method>
+        
+	    <!-- +++++++++++++++++++++++++++++++++++++++++++++ -->
+	    <!-- Convenience methods for sending tracking data -->
+	    <!-- +++++++++++++++++++++++++++++++++++++++++++++ -->
+        
+        <method id="sendEvent" params="category, action, label, value, params">
+            <![CDATA[
+                this.send( EVENT, new EventInfoParams( category, action, label, value ), params );
+            ]]>
+        </method>
+        <method id="sendException" params="description, fatal, params">
+            <![CDATA[
+                this.send( EXCEPTION, new ExceptionInfoParams( description, fatal ), params );
+            ]]>
+        </method>
+        <method id="sendTiming" params="category, variable, time, label, params">
+            <![CDATA[
+                this.send( TIMING, new TimingInfoParams( category, variable, time, label ), params );
+            ]]>
+        </method>
+        <method id="sendScreenview" params="screenName, linkId, params">
+            <![CDATA[
+                this.send( SCREENVIEW, new ContentInfoParams( screenName, linkId ), params );
+            ]]>
+        </method>
+    </class>
+    
+    <handler path="/send/analytics">
+        <behavior>
+            <method id="onInvoke" params="handler, message">
+                <![CDATA[
+                    handler.invoke( new Message( "http://www.google-analytics.com/collect?" + message.query ) );
+                ]]>
+            </method>
+        </behavior>
+    </handler>
+    
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- MeasurementProtocolParams class - base class for all parameter types. --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+    
+    <class id="MeasurementProtocolParams">
+        <method id="extend" params="params">
+            <![CDATA[
+                return params;
+            ]]>
+        </method>
+        <method id="setValue" params="params, name, value">
+            <![CDATA[
+                if( params != null && name != null && value != null )
+                    params[name] = value;                            
+            ]]>
+        </method>
+    </class>
+    
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- GeneralInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="GeneralInfoParams" like="MeasurementProtocolParams">
+        <field id="protocolVersion" />
+        <field id="trackingId" />
+        <field id="userAgent" />
+        <field id="anonymize" />
+        <field id="queueTime" />
+        <constructor params="protocolVersion, trackingId, userAgent, anonymize, queueTime">
+            <![CDATA[
+                this.protocolVersion = protocolVersion;
+                this.trackingId = trackingId;
+                this.userAgent = userAgent;
+                this.anonymize = anonymize;
+                this.queueTime = queueTime;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "v", this.protocolVersion );
+                this.setValue( params, "tid", this.trackingId );
+                this.setValue( params, "ua", this.userAgent );
+                this.setValue( params, "aip", this.anonymize ? 1 : null );
+                this.setValue( params, "qt", this.queueTime );
+
+                return params;
+            ]]>
+        </method>
+    </class>
+    
+    <!-- ++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- UserInfoParams measurement protool class --> 
+    <!-- ++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="UserInfoParams" like="MeasurementProtocolParams">
+        <field id="clientId" />
+        <field id="userId" />
+        <constructor params="clientId, userId">
+            <![CDATA[
+                this.clientId = clientId;
+                this.userId = userId;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "cid", this.clientId );
+                this.setValue( params, "uid", this.userId );
+
+                return params;
+            ]]>
+        </method>
+    </class>
+    
+    <!-- ++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- SystemInfoParams measurement protool class --> 
+    <!-- ++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="SystemInfoParams" like="MeasurementProtocolParams">
+        <field id="screenResolution" />
+        <field id="viewportSize" />
+        <field id="screenColors" />
+        <field id="userLanguage" />
+        <constructor params="screenResolution, viewportSize, screenColors, userLanguage">
+            <![CDATA[
+                this.screenResolution = screenResolution;
+                this.viewportSize = viewportSize;
+                this.screenColors = screenColors;
+                this.userLanguage = userLanguage;
+            
+                //if( application != null )
+                //    this.screenResolution = application.width + "x" + application.height;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "sr", this.screenResolution );
+                this.setValue( params, "vp", this.viewportSize );
+                this.setValue( params, "sd", this.screenColors );
+                this.setValue( params, "ul", this.userLanguage );
+
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- ApplicationInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="ApplicationInfoParams" like="MeasurementProtocolParams">
+        <field id="name" />
+        <field id="id" />
+        <field id="version" />
+        <field id="installerId" />
+        <constructor params="name, id, version, installerId">
+            <![CDATA[
+                this.name = name;
+                this.id = id;
+                this.version = version;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "an", this.name );
+                this.setValue( params, "aid", this.id );
+                this.setValue( params, "av", this.version );
+                this.setValue( params, "aiid", this.installerId );
+
+                return params;
+            ]]>
+        </method>
+    </class>
+    
+    <!-- +++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- EventInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="EventInfoParams" like="MeasurementProtocolParams">
+        <field id="category" />
+        <field id="action" />
+        <field id="label" />
+        <field id="value" />
+        <constructor params="category, action, label, value">
+            <![CDATA[
+                this.category = category;
+                this.action = action;
+                this.label = label;
+                this.value = value;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "ec", this.category );
+                this.setValue( params, "ea", this.action );
+                this.setValue( params, "el", this.label );
+                this.setValue( params, "ev", this.value );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- ContentInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="ContentInfoParams" like="MeasurementProtocolParams">
+        <field id="screenName" />
+        <field id="linkId" />
+        <constructor params="screenName, linkId">
+            <![CDATA[
+                this.screenName = screenName;
+                this.linkId = linkId;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "cd", this.screenName );
+                this.setValue( params, "linkid", this.linkId );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+    
+    <!-- ++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- TimingInfoParams measurement protool class --> 
+    <!-- ++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="TimingInfoParams" like="MeasurementProtocolParams">
+        <field id="category" />
+        <field id="variable" />
+        <field id="time" />
+        <field id="label" />
+        <constructor params="category, variable, time, label">
+            <![CDATA[
+                this.category = category;
+                this.variable = variable;
+                this.time = time;
+                this.label = label;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "utc", this.category );
+                this.setValue( params, "utv", this.variable );
+                this.setValue( params, "utt", this.time );
+                this.setValue( params, "utl", this.label );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- ExceptionInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="ExceptionInfoParams" like="MeasurementProtocolParams">
+        <field id="description" />
+        <field id="fatal" />
+        <constructor params="description, fatal">
+            <![CDATA[
+                this.description = description;
+                
+                if( fatal != null )
+                {
+                    if( fatal == true || fatal == 1 || fatal == "yes" )
+                        this.fatal = 1;
+                    
+                    else if( fatal == false || fatal == 0 || fatal == "no" )
+                        this.fatal = 0;
+                }
+                
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "exd", this.description );
+                this.setValue( params, "exf", this.fatal );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- CustomDimensionInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="CustomDimensionInfoParams" like="MeasurementProtocolParams">
+        <field id="index" />
+        <field id="value" />
+        <constructor params="index, value">
+            <![CDATA[
+                this.index = index;
+                this.value = value;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                if( this.index != null && this.value != null )
+                    this.setValue( params, "cd" + this.index, this.value );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- ++++++++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- CustomMetricInfoParams measurement protool class --> 
+    <!-- ++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="CustomMetricInfoParams" like="MeasurementProtocolParams">
+        <field id="index" />
+        <field id="value" />
+        <constructor params="index, value">
+            <![CDATA[
+                this.index = index;
+                this.value = value;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                if( this.index != null && this.value != null )
+                    this.setValue( params, "cm" + this.index, this.value );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+    <!-- SessionInfoParams measurement protool class --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++++++ -->
+
+    <class id="SessionInfoParams" like="MeasurementProtocolParams">
+        <field id="status" />
+        <constructor params="status">
+            <![CDATA[
+                this.status = status;
+            
+                MeasurementProtocolParams.call( this );
+            ]]>
+        </constructor>
+        <method id="extend" params="params">
+            <![CDATA[
+                this.setValue( params, "sc", this.status );
+            
+                return params;
+            ]]>
+        </method>
+    </class>
+
+    <!-- +++++++++++++++++++++++++++++++++++++++ -->
+    <!-- Measurement Prototcol utility functions --> 
+    <!-- +++++++++++++++++++++++++++++++++++++++ -->
+    <private>
+	    <function id="createUUID">
+	        <![CDATA[
+	            var uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace( /[xy]/g, function( c ) {
+	                var r = Math.random() * 16 | 0;
+	                var v = c == 'x' ? r : ( r & 0x3 | 0x8 );
+	                
+	                return v.toString( 16 );
+	            });   
+	            
+	            return uuid;         
+	        ]]>
+	    </function>
+	
+	    <function id="mergeMeasurementProtocolParams" params="src, params">
+	        <![CDATA[
+	           if( src != null && params != null )
+	           {
+		            if( src instanceof MeasurementProtocolParams )
+		                src.extend( params );
+		
+		            else if( src instanceof Array )
+		            {
+		                for( var j = 0; j < src.length; j++ )
+		                   mergeMeasurementProtocolParams( src[j], params );
+		            }
+		            else
+		                throw Error( "Unkown source type for measurment protocol params." );
+		       }
+	        ]]>
+	    </function>
+    </private>
+
+</module>
